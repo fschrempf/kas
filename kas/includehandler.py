@@ -148,10 +148,14 @@ class IncludeHandler:
         self.top_files = top_files
         self.top_repo_path = top_repo_path
         self.use_lock = use_lock
+        self.config_files = []
 
     def get_lockfile(self, kasfile=None):
         file = Path(kasfile or self.top_files[0])
         return file.parent / (file.stem + '.lock' + file.suffix)
+
+    def get_lockfiles(self):
+        return list(filter(lambda x: x.is_lockfile, self.config_files))
 
     def get_top_repo_path(self):
         return self.top_repo_path
@@ -203,14 +207,15 @@ class IncludeHandler:
                 current_config = ConfigFile(filename, is_lockfile, is_external)
                 # if lockfile exists and locking, inject it after current file
                 lockfile = self.get_lockfile(filename)
-                if self.use_lock and Path(lockfile).exists():
-                    logging.debug('append lockfile %s', lockfile)
+                if Path(lockfile).exists():
                     (cfg, rep) = _internal_include_handler(
                         lockfile,
                         repo_path,
                         is_lockfile=True,
                         is_external=is_external
                     )
+                    if self.use_lock:
+                        logging.debug('append lockfile %s', lockfile)
                     configs.extend(cfg)
                     missing_repos.extend(rep)
                 # src_dir must only be set by auto-generated config file
@@ -314,16 +319,20 @@ class IncludeHandler:
                     dest[k] = upd[k]
             return dest
 
-        configs = []
+        self.config_files = []
         missing_repos = []
         for configfile in self.top_files:
             cfgs, reps = _internal_include_handler(configfile,
                                                    self.top_repo_path)
-            configs.extend(cfgs)
+            self.config_files.extend(cfgs)
             for repo in reps:
                 if repo not in missing_repos:
                     missing_repos.append(repo)
 
+        config_files = self.config_files
+        if not self.use_lock:
+            config_files = filter(lambda x: not x.is_lockfile, config_files)
+
         config = functools.reduce(_internal_dict_merge,
-                                  map(lambda x: x.config, configs))
+                                  map(lambda x: x.config, config_files))
         return config, missing_repos
