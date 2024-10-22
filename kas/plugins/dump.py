@@ -182,6 +182,19 @@ class Dump(Checkout):
                             action='store_true',
                             help='Create or update top-level lockfile in-place (requires --lock)')
 
+    def _write_config(self, output, config, args):
+        with IoTargetMonitor(output) as f:
+            if args.format == 'json':
+                json.dump(config, f, indent=args.indent)
+                f.write('\n')
+            elif args.format == 'yaml':
+                yaml.dump(
+                    config, f,
+                    indent=args.indent,
+                    Dumper=self.KasYamlDumper)
+            else:
+                raise OutputFormatError(args.format)
+
     def run(self, args):
         args.skip += [
             'setup_dir',
@@ -243,17 +256,7 @@ class Dump(Checkout):
         if args.resolve_env and 'env' in config_expanded:
             config_expanded['env'] = ctx.config.get_environment()
 
-        with IoTargetMonitor(output) as f:
-            if args.format == 'json':
-                json.dump(config_expanded, f, indent=args.indent)
-                f.write('\n')
-            elif args.format == 'yaml':
-                yaml.dump(
-                    config_expanded, f,
-                    indent=args.indent,
-                    Dumper=self.KasYamlDumper)
-            else:
-                raise OutputFormatError(args.format)
+        self._write_config(output, config_expanded, args)
 
 
 __KAS_PLUGINS__ = [Dump]
