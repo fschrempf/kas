@@ -160,7 +160,8 @@ class IncludeHandler:
 
         repos = repos or {}
 
-        def _internal_include_handler(filename, repo_path):
+        def _internal_include_handler(filename, repo_path,
+                                      is_lockfile=False, is_remote=False):
             """
             Recursively loads include files and finds missing repos.
 
@@ -192,11 +193,19 @@ class IncludeHandler:
                 current_config, src_dir = load_config(filename)
                 # if lockfile exists and locking, inject it after current file
                 lockfile = self.get_lockfile(filename)
-                if self.use_lock and Path(lockfile).exists():
+                if Path(lockfile).exists():
                     logging.debug('append lockfile %s', lockfile)
                     (cfg, rep) = _internal_include_handler(lockfile,
-                                                           repo_path)
-                    configs.extend(cfg)
+                                                           repo_path,
+                                                           is_lockfile=True,
+                                                           is_remote=is_remote)
+                    if self.use_lock:
+                        configs.extend(cfg)
+                    else:
+                        # even if lockfiles are unused (when --update is set),
+                        # we want to track their paths to let plugins process
+                        # this information
+                        configs.extend([(cfg[0][0], {}, cfg[0][2], cfg[0][3])])
                     missing_repos.extend(rep)
                 # src_dir must only be set by auto-generated config file
                 if src_dir:
@@ -247,12 +256,12 @@ class IncludeHandler:
                         abs_includedir = os.path.abspath(includedir)
                         (cfg, rep) = _internal_include_handler(
                             os.path.join(abs_includedir, includefile),
-                            abs_includedir)
+                            abs_includedir, is_remote=True)
                         configs.extend(cfg)
                         missing_repos.extend(rep)
                     else:
                         missing_repos.append(includerepo)
-            configs.append((filename, current_config))
+            configs.append((filename, current_config, is_lockfile, is_remote))
             # Remove all possible duplicates in missing_repos
             missing_repos = list(OrderedDict.fromkeys(missing_repos))
             return (configs, missing_repos)
@@ -302,6 +311,7 @@ class IncludeHandler:
                 if repo not in missing_repos:
                     missing_repos.append(repo)
 
+        lockfiles = [(x[0], x[3]) for x in filter(lambda x: x[2], configs)]
         config = functools.reduce(_internal_dict_merge,
                                   map(lambda x: x[1], configs))
-        return config, missing_repos
+        return config, missing_repos, lockfiles

@@ -45,6 +45,7 @@ class Config:
         self._override_task = task
         self._build_dir = ctx.build_dir
         self._config = {}
+        self._lockfiles = []
         if not filename:
             filename = os.path.join(ctx.kas_work_dir, CONFIG_YAML_FILE)
 
@@ -80,7 +81,7 @@ class Config:
         """
             Returns repos that are in config but not on disk
         """
-        (self._config, missing_repo_names) = \
+        (self._config, missing_repo_names, self._lockfiles) = \
             self.handler.get_config(repos=repo_paths)
 
         return missing_repo_names
@@ -90,6 +91,12 @@ class Config:
             Returns the config dict.
         """
         return self._config
+
+    def get_lockfiles(self):
+        """
+            Returns the list of in-use lockfiles.
+        """
+        return self._lockfiles
 
     def get_repos_config(self):
         """
