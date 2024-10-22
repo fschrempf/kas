@@ -73,10 +73,13 @@ import sys
 import json
 import yaml
 import logging
+import os
 from typing import TypeVar, TextIO
 from collections import OrderedDict
 from kas.context import get_context
+from kas.includehandler import IncludeHandler
 from kas.plugins.checkout import Checkout
+from kas.repos import Repo
 from kas.kasusererror import KasUserError, ArgsCombinationError
 
 __license__ = 'MIT'
@@ -181,6 +184,9 @@ class Dump(Checkout):
         parser.add_argument('-i', '--inplace',
                             action='store_true',
                             help='Create or update top-level lockfile in-place (requires --lock)')
+        parser.add_argument('--inplace-existing',
+                            action='store_true',
+                            help='Update existing local lockfiles in-place (requires --lock)')
 
     def _write_config(self, output, config, args):
         with IoTargetMonitor(output) as f:
@@ -194,6 +200,27 @@ class Dump(Checkout):
                     Dumper=self.KasYamlDumper)
             else:
                 raise OutputFormatError(args.format)
+
+    def _update_lockfile(self, lockfile, repos_to_lock, args):
+        output = IoTarget(target=lockfile[0], managed=True)
+        repo_path = Repo.get_root_path(os.path.dirname(lockfile[0]))
+
+        lockfile_handler = IncludeHandler([lockfile[0]], repo_path, False)
+        lockfile_config = lockfile_handler.get_config()[0]
+
+        for k, v in lockfile_config['overrides']['repos'].items():
+            for r in repos_to_lock:
+                if k == r.name:
+                    v['commit'] = r.revision
+                    repos_to_lock.remove(r)
+
+        if lockfile[1]:
+            logging.warning(f'Remote lockfile {lockfile[0]}, not updating.')
+            return repos_to_lock
+
+        logging.info(f'Updating lockfile {lockfile[0]}')
+        self._write_config(output, lockfile_config, args)
+        return repos_to_lock
 
     def run(self, args):
         args.skip += [
@@ -211,8 +238,8 @@ class Dump(Checkout):
         repos = ctx.config.get_repos()
         output = IoTarget(target=sys.stdout, managed=False)
 
-        if args.inplace and not args.lock:
-            raise ArgsCombinationError('--inplace requires --lock')
+        if (args.inplace or args.inplace_existing) and not args.lock:
+            raise ArgsCombinationError('--inplace/--inplace-existing requires --lock')
         if args.resolve_local and args.lock:
             raise ArgsCombinationError(
                 '--resolve-local cannot be used with --lock')
@@ -223,6 +250,16 @@ class Dump(Checkout):
             repos = [r for r in repos if not r.operations_disabled]
             config_expanded['overrides'] = \
                 {'repos': {r.name: {'commit': r.revision} for r in repos}}
+
+        if args.lock and args.inplace_existing:
+            repos_to_lock = repos
+            for l in ctx.config.get_lockfiles():
+                repos_to_lock = self._update_lockfile(l, repos_to_lock, args)
+            if repos_to_lock:
+                logging.warning('The following repos are not covered by any lockfile:')
+                for r in repos_to_lock:
+                    logging.warning(f'  {r.name}')
+            return
 
         if args.lock and args.inplace:
             lockfile = ctx.config.handler.get_lockfile()
