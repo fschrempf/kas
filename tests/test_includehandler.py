@@ -149,6 +149,14 @@ header:
                 assert test['conf'] == config
                 assert test['rmiss'] == missing
 
+                if 'cfiles' in test:
+                    assert len(ginc.config_files) == len(test['cfiles'])
+
+                    for i, cf in enumerate(ginc.config_files):
+                        assert test['cfiles'][i][0] == cf.filename
+                        assert test['cfiles'][i][1] == cf.is_lockfile
+                        assert test['cfiles'][i][2] == cf.is_external
+
     def test_valid_includes_none(self, monkeypatch):
         header = self.__class__.header
         testvector = [
@@ -161,6 +169,13 @@ header:
                 'conf': {
                 },
                 'rmiss': [
+                ],
+                'cfiles': [
+                    (
+                        'x.yml',
+                        False,
+                        False
+                    )
                 ]
             },
         ]
@@ -182,6 +197,18 @@ header:
                     'v': None
                 },
                 'rmiss': [
+                ],
+                'cfiles': [
+                    (
+                        os.path.abspath('y.yml'),
+                        False,
+                        False
+                    ),
+                    (
+                        'x.yml',
+                        False,
+                        False
+                    )
                 ]
             },
             # Include one file from another not available repo:
@@ -196,6 +223,13 @@ header:
                 },
                 'rmiss': [
                     'rep',
+                ],
+                'cfiles': [
+                    (
+                        'x.yml',
+                        False,
+                        False
+                    )
                 ]
             },
             # Include one file from the same repo and one from another
@@ -213,6 +247,18 @@ header:
                 },
                 'rmiss': [
                     'rep',
+                ],
+                'cfiles': [
+                    (
+                        os.path.abspath('y.yml'),
+                        False,
+                        False
+                    ),
+                    (
+                        'x.yml',
+                        False,
+                        False
+                    )
                 ]
             },
             # Include one file from another available repo:
@@ -229,6 +275,18 @@ header:
                     'v': None
                 },
                 'rmiss': [
+                ],
+                'cfiles': [
+                    (
+                        '/rep/y.yml',
+                        False,
+                        True
+                    ),
+                    (
+                        'x.yml',
+                        False,
+                        False
+                    )
                 ]
             },
             # Include two files from another repo in sub-directories:
@@ -247,6 +305,23 @@ header:
                     'v': None
                 },
                 'rmiss': [
+                ],
+                'cfiles': [
+                    (
+                        '/rep/dir2/z.yml',
+                        False,
+                        True
+                    ),
+                    (
+                        '/rep/dir1/y.yml',
+                        False,
+                        True
+                    ),
+                    (
+                        'x.yml',
+                        False,
+                        False
+                    )
                 ]
             },
         ]
