@@ -63,11 +63,13 @@ class IncludeException(KasUserError):
 
 
 class ConfigFile():
-    def __init__(self, filename):
+    def __init__(self, filename, is_lockfile=False, is_external=False):
         self.filename = filename
         self.config = {}
         # src_dir must only be set by auto-generated config file
         self.src_dir = None
+        self.is_lockfile = is_lockfile
+        self.is_external = is_external
         self._load_config()
 
     def _load_config(self):
@@ -168,7 +170,8 @@ class IncludeHandler:
 
         repos = repos or {}
 
-        def _internal_include_handler(filename, repo_path):
+        def _internal_include_handler(filename, repo_path, is_lockfile=False,
+                                      is_external=False):
             """
             Recursively loads include files and finds missing repos.
 
@@ -197,13 +200,17 @@ class IncludeHandler:
             missing_repos = []
             configs = []
             try:
-                current_config = ConfigFile(filename)
+                current_config = ConfigFile(filename, is_lockfile, is_external)
                 # if lockfile exists and locking, inject it after current file
                 lockfile = self.get_lockfile(filename)
                 if self.use_lock and Path(lockfile).exists():
                     logging.debug('append lockfile %s', lockfile)
-                    (cfg, rep) = _internal_include_handler(lockfile,
-                                                           repo_path)
+                    (cfg, rep) = _internal_include_handler(
+                        lockfile,
+                        repo_path,
+                        is_lockfile=True,
+                        is_external=is_external
+                    )
                     configs.extend(cfg)
                     missing_repos.extend(rep)
                 # src_dir must only be set by auto-generated config file
@@ -242,8 +249,11 @@ class IncludeHandler:
                                     'Update your layer to repo-relative '
                                     'addressing to avoid this warning')
                                 includefile = alternate
-                    (cfg, rep) = _internal_include_handler(includefile,
-                                                           repo_path)
+                    (cfg, rep) = _internal_include_handler(
+                        includefile,
+                        repo_path,
+                        is_external=is_external
+                    )
                     configs.extend(cfg)
                     missing_repos.extend(rep)
                 elif isinstance(include, Mapping):
@@ -258,7 +268,8 @@ class IncludeHandler:
                         abs_includedir = os.path.abspath(includedir)
                         (cfg, rep) = _internal_include_handler(
                             os.path.join(abs_includedir, includefile),
-                            abs_includedir)
+                            abs_includedir,
+                            is_external=True)
                         configs.extend(cfg)
                         missing_repos.extend(rep)
                     else:
