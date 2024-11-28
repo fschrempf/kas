@@ -139,7 +139,10 @@ class IncludeHandler:
         self.top_repo_path = top_repo_path
         self.use_lock = use_lock
 
-    def get_lockfile(self, kasfile=None):
+    def get_lock_filename(self, kasfile=None):
+        """
+        Returns the lockfile name for the given kasfile.
+        """
         file = Path(kasfile or self.top_files[0])
         return file.parent / (file.stem + '.lock' + file.suffix)
 
@@ -191,7 +194,7 @@ class IncludeHandler:
             try:
                 current_config, src_dir = load_config(filename)
                 # if lockfile exists and locking, inject it after current file
-                lockfile = self.get_lockfile(filename)
+                lockfile = self.get_lock_filename(filename)
                 if self.use_lock and Path(lockfile).exists():
                     logging.debug('append lockfile %s', lockfile)
                     (cfg, rep) = _internal_include_handler(lockfile,
