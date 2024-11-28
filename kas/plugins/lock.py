@@ -47,7 +47,9 @@
 
 import logging
 import os
+from pathlib import Path
 from kas.context import get_context
+from kas.includehandler import ConfigFile
 from kas.plugins.checkout import Checkout
 from kas.plugins.dump import Dump, IoTarget
 
@@ -70,6 +72,61 @@ class Lock(Checkout):
         super().setup_parser(parser)
         Dump.setup_parser_format_args(parser)
 
+    @staticmethod
+    def _path_is_relative_to(path, prefix):
+        """
+        Path.is_relative_to implementation for python < 3.9
+        """
+        try:
+            path.relative_to(prefix)
+            return True
+        except ValueError:
+            return False
+
+    def _is_external_lockfile(self, lockfile):
+        for (_, r) in self.repos:
+            if self._path_is_relative_to(Path(lockfile.filename), r.path):
+                # repos managed by kas (ops=enabled) are external
+                if not r.operations_disabled:
+                    return True
+        return False
+
+    def _update_lockfile(self, lockfile, repos_to_lock, args):
+        """
+        Update all locks in the given lockfile. No new locks are added.
+        """
+        output = IoTarget(target=lockfile, managed=True)
+        lockfile_config = lockfile.config
+        changed = False
+
+        for k, v in lockfile_config['overrides']['repos'].items():
+            for rk, r in repos_to_lock:
+                if k == rk:
+                    if v['commit'] == r.revision:
+                        logging.info('Lock of %s is up-to-date: %s',
+                                     r.name, r.revision)
+                    elif not self._is_external_lockfile(lockfile):
+                        logging.info('Updating lock of %s: %s -> %s',
+                                     r.name, v['commit'], r.revision)
+                        v['commit'] = r.revision
+                        changed = True
+                    else:
+                        logging.warning('Repo %s is locked in remote lockfile %s. '
+                                        'Not updating.',
+                                        r.name, lockfile.filename)
+                        continue
+                    repos_to_lock.remove((rk, r))
+
+        if not changed:
+            return repos_to_lock
+
+        logging.info('Updating lockfile %s',
+                     os.path.relpath(lockfile.filename, os.getcwd()))
+        output = IoTarget(target=lockfile.filename, managed=True)
+        format = "json" if lockfile.filename.suffix == '.json' else "yaml"
+        Dump.dump_config(lockfile_config, output, format, args.indent)
+        return repos_to_lock
+
     def run(self, args):
         def _filter_enabled(repos):
             return [(k, r) for k, r in repos if not r.operations_disabled]
@@ -83,22 +140,33 @@ class Lock(Checkout):
 
         super().run(args)
         ctx = get_context()
-        config_expanded = {'header': {'version': 14}}
-        repos = ctx.config.repo_dict.items()
+        self.repos = ctx.config.repo_dict.items()
+        # when locking, only consider floating repos managed by kas
+        repos_to_lock = [(k, r) for k, r in _filter_enabled(self.repos)
+                         if not r.commit]
+        if not repos_to_lock:
+            logging.info('No floating repos found. Nothing to lock.')
+            return
 
-        # when locking, only consider repos managed by kas
-        repos = _filter_enabled(repos)
-        config_expanded['overrides'] = \
-            {'repos': {k: {'commit': r.revision} for k, r in repos}}
-
-        lockfile = ctx.config.handler.get_lockfile()
-        output = IoTarget(target=lockfile, managed=True)
-        format = "json" if lockfile.suffix == '.json' else "yaml"
-
-        Dump.dump_config(config_expanded, output, format,
-                         args.indent, args.sort)
-        logging.info('Lockfile created: %s',
-                     os.path.relpath(lockfile, os.getcwd()))
+        # first update all locks we have without creating new ones
+        lockfiles = ctx.config.get_lockfiles()
+        for lock in lockfiles:
+            repos_to_lock = self._update_lockfile(lock, repos_to_lock, args)
+        # then add new locks for the remaining repos to the default lockfile
+        if repos_to_lock:
+            logging.warning('The following repos are not covered by any '
+                            'lockfile. Adding to top lockfile: %s',
+                            ', '.join([r.name for _, r in repos_to_lock]))
+            lockpath = ctx.config.handler.get_lock_filename()
+            if len(lockfiles) and lockfiles[0].filename == lockpath:
+                lock = lockfiles[0]
+            else:
+                lock = ConfigFile(lockpath, True)
+                lock.config['header'] = {'version': 14}
+                lock.config['overrides'] = {'repos': {}}
+            for kr, _ in repos_to_lock:
+                lock.config['overrides']['repos'][kr] = {'commit': None}
+            self._update_lockfile(lock, repos_to_lock, args)
 
 
 __KAS_PLUGINS__ = [Lock]
