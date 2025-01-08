@@ -130,6 +130,20 @@ enable_oe_mode() {
 	fi
 }
 
+enable_unpriv_userns_docker() {
+	if [ -f /etc/os-release ] && grep -q 'NAME="Ubuntu"' /etc/os-release &&
+	   [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] &&
+	   [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = "1" ]; then
+		if [ -f /etc/apparmor.d/rootlesskit ]; then
+			trace echo 'AppArmor restricts unprivileged userns, using "rootlesskit" profile'
+			KAS_RUNTIME_ARGS="${KAS_RUNTIME_ARGS} --security-opt apparmor=rootlesskit"
+		else
+			warning "AppArmor restricts unprivileged userns but no suitable apparmor " \
+			        "profile found. Consider setting apparmor_restrict_unprivileged_userns=0"
+		fi
+	fi
+}
+
 run_clean() {
 	if [ -n "${KAS_ISAR_ARGS}" ]; then
 		# SC2086: Double quote to prevent globbing and word splitting.
@@ -205,6 +219,7 @@ KAS_RUNTIME_ARGS="--log-driver=none --user=root"
 case "${KAS_CONTAINER_ENGINE}" in
 docker)
 	KAS_CONTAINER_COMMAND="docker"
+	enable_unpriv_userns_docker
 	;;
 podman)
 	KAS_CONTAINER_COMMAND="podman"
