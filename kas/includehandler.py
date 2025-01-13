@@ -341,6 +341,6 @@ class IncludeHandler:
                                   map(lambda x: x.config, config_files))
         # the merged config must have the highest (used) version number
         header_version = max([int(cfg.config['header']['version'])
-                              for cfg in configs])
+                              for cfg in self.config_files])
         config['header']['version'] = header_version
         return config, missing_repos
