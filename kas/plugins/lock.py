@@ -102,6 +102,7 @@ class Lock(Checkout):
         for k, v in lockfile_config['overrides']['repos'].items():
             for rk, r in repos_to_lock:
                 if k == rk:
+                    repos_to_lock.remove((rk, r))
                     if v['commit'] == r.revision:
                         logging.info('Lock of %s is up-to-date: %s',
                                      r.name, r.revision)
@@ -115,7 +116,6 @@ class Lock(Checkout):
                                         'Not updating.',
                                         r.name, lockfile.filename)
                         continue
-                    repos_to_lock.remove((rk, r))
 
         if not changed:
             return repos_to_lock
